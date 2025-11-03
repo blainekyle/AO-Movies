@@ -197,6 +197,15 @@
     <script>
         document.addEventListener('DOMContentLoaded', () => {
 
+            // --- URL CLEANUP SNIPPET ---
+            // Removes ?fbclid=... from the URL bar without reloading
+            if (window.location.search.includes('fbclid')) {
+                const cleanUrl = window.location.href.split('?')[0];
+                window.history.replaceState(null, '', cleanUrl);
+            }
+            // --- END SNIPPET ---
+
+
             // --- 1. DEFINE GENRE & GET DOM ELEMENTS ---
 
             const featureFilmsGenre = { 
@@ -448,7 +457,8 @@
                 }
 
                 playerView.style.display = 'none';
-                homeView.style.display = 'block';
+                // *** MODIFIED *** Changed 'block' to 'flex' to match CSS
+                homeView.style.display = 'flex';
 
                 currentPlaylist = [];
                 currentTrack = 0;
@@ -517,10 +527,7 @@
             videoElement.addEventListener('playing', () => showLoading(false));
 
         });
-		
-		
     </script>
 </body>
 </html>
-
 
