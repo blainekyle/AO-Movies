@@ -1,0 +1,524 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Archive Player</title>
+    
+    <!-- CSS is inlined here -->
+    <style>
+        /* Basic reset and fullscreen setup */
+        html, body {
+            margin: 0;
+            padding: 0;
+            width: 100%;
+            height: 100%;
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+            background-color: #121212;
+            color: #f0f0f0;
+            overflow: hidden; /* Prevents scrollbars */
+        }
+
+        /* Home View styles */
+        #home-view {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            text-align: center;
+            padding: 20px;
+            width: 100%;
+            height: 100%;
+            box-sizing: border-box; /* Ensures padding doesn't break layout */
+        }
+
+        #home-view h1 {
+            font-size: 2.5rem;
+            font-weight: 600;
+            margin-bottom: 15px;
+        }
+
+        #home-view p {
+            font-size: 1.1rem;
+            max-width: 600px;
+            line-height: 1.6;
+            color: #b3b3b3;
+            margin-bottom: 30px;
+        }
+
+        #start-button {
+            padding: 15px 30px;
+            font-size: 1.2rem;
+            font-weight: 600;
+            color: white;
+            background-color: #3498db;
+            border: none;
+            border-radius: 8px;
+            cursor: pointer;
+            transition: background-color 0.2s, transform 0.2s;
+            box-shadow: 0 4px 8px rgba(0, 0, 0, 0.3);
+        }
+
+        #start-button:hover {
+            background-color: #2980b9;
+            transform: translateY(-2px);
+        }
+
+        /* Player View styles */
+        #player-view {
+            width: 100%;
+            height: 100%;
+            background: #000;
+            display: none; /* Hidden by default */
+            position: relative; /* For positioning the back button */
+            overflow: hidden; /* Hide info box overflow */
+        }
+
+        #video-player {
+            width: 100%;
+            height: 100%;
+            /* *** NEW CSS *** Ensures "fit" scaling, not "stretch" */
+            object-fit: contain;
+        }
+
+        /* Base style for player UI buttons */
+        .player-button {
+            position: absolute;
+            top: 20px;
+            z-index: 1000;
+            padding: 10px 15px;
+            font-size: 1rem;
+            font-weight: 600;
+            background-color: rgba(255, 255, 255, 0.2);
+            color: white;
+            border: 1px solid rgba(255, 255, 255, 0.4);
+            border-radius: 5px;
+            cursor: pointer;
+            opacity: 0.3; /* Hidden until hover */
+            transition: opacity 0.3s;
+        }
+
+        #back-button {
+            left: 20px;
+        }
+
+        /* *** NEW Info Button *** */
+        #info-button {
+            right: 20px;
+        }
+
+        #player-view:hover .player-button {
+            opacity: 1; /* Show on hover */
+        }
+
+        /* *** NEW Info Box *** */
+        #info-box {
+            position: absolute;
+            bottom: 80px; /* Position above video controls */
+            left: 20px;
+            right: 20px;
+            background-color: rgba(0, 0, 0, 0.7);
+            border-radius: 8px;
+            padding: 15px;
+            z-index: 999;
+            opacity: 0;
+            display: none;
+            transition: opacity 0.3s ease-in-out;
+            /* *** MODIFIED *** Taller and no scrollbar */
+            max-height: 60vh;
+            overflow-y: hidden;
+            box-sizing: border-box; /* Added for safer padding calculation */
+        }
+
+        #info-box h3 {
+            margin: 0 0 10px 0;
+            font-size: 1.2rem;
+            color: white;
+        }
+
+        #info-box p {
+            margin: 0;
+            font-size: 0.9rem;
+            line-height: 1.5;
+            color: #f0f0f0;
+            /* *** NEW *** Hide overflow on the paragraph itself */
+            overflow: hidden;
+        }
+
+
+        /* Loading Spinner */
+        #loading-spinner {
+            display: none; /* Hidden by default */
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            border: 8px solid #f3f3ff;
+            border-top: 8px solid #3498db;
+            border-radius: 50%;
+            width: 60px;
+            height: 60px;
+            animation: spin 1s linear infinite;
+            z-index: 2000;
+        }
+
+        @keyframes spin {
+            0% { transform: translate(-50%, -50%) rotate(0deg); }
+            100% { transform: translate(-50%, -50%) rotate(360deg); }
+        }
+
+    </style>
+</head>
+<body>
+
+    <!-- HTML Structure -->
+    <div id="home-view">
+        <h1>Archive Film Player</h1>
+        <p>
+            This app plays a continuous, randomized 8-hour playlist of public domain feature films from the Internet Archive.
+            <br/><br/>
+            Playback will start in fullscreen. You can use the standard video controls to pause or skip. Press 'Esc' or the 'Back' button to return here.
+        </p>
+        <button id="start-button">Start Playback</button>
+    </div>
+    
+    <div id="player-view">
+        <video id="video-player" controls></video>
+        <button id="back-button" class="player-button">&larr; Back</button> 
+        <button id="info-button" class="player-button">Info</button>
+        <div id="info-box">
+            <!-- Content injected by JS -->
+        </div>
+    </div>
+
+    <div id="loading-spinner"></div>
+
+    <!-- JavaScript is inlined here -->
+    <script>
+        document.addEventListener('DOMContentLoaded', () => {
+
+            // --- 1. DEFINE GENRE & GET DOM ELEMENTS ---
+
+            const featureFilmsGenre = { 
+                name: "Feature Films", 
+                type: "collection", 
+                id: "feature_films" 
+            };
+
+            const homeView = document.getElementById('home-view');
+            const playerView = document.getElementById('player-view');
+            const videoElement = document.getElementById('video-player');
+            const backButton = document.getElementById('back-button');
+            const startButton = document.getElementById('start-button');
+            const loadingSpinner = document.getElementById('loading-spinner');
+            
+            // --- NEW Info Box Elements ---
+            const infoButton = document.getElementById('info-button');
+            const infoBox = document.getElementById('info-box');
+            let infoTimer = null;
+
+            let currentPlaylist = [];
+            let currentTrack = 0;
+
+            // --- 2. CORE LOGIC: FETCHING PLAYLIST ---
+
+            async function playGenre(genreObj) {
+                console.log(`Fetching items for: ${genreObj.name}`);
+                showLoading(true);
+                try {
+                    const items = await getPlaylistItems(genreObj);
+                    
+                    // Client-side filtering for duration
+                    const validItems = items.filter(item => item.length && parseDuration(item.length) > 0);
+
+                    if (!validItems || validItems.length === 0) {
+                        alert(`No video items found for "${genreObj.name}".`);
+                        showLoading(false);
+                        return;
+                    }
+                    
+                    const eightHoursInSeconds = 8 * 60 * 60; // 28,800
+                    let currentDuration = 0;
+                    let playlist = [];
+
+                    // Shuffle the valid items
+                    let shuffledItems = [...validItems];
+                    for (let i = shuffledItems.length - 1; i > 0; i--) {
+                        const j = Math.floor(Math.random() * (i + 1));
+                        [shuffledItems[i], shuffledItems[j]] = [shuffledItems[j], shuffledItems[i]];
+                    }
+
+                    // Build the playlist up to ~8 hours
+                    for (const item of shuffledItems) {
+                        if (currentDuration >= eightHoursInSeconds) break;
+                        
+                        const duration = parseDuration(item.length);
+                        if (duration > 0) { 
+                            // *** MODIFIED *** Store the whole item
+                            playlist.push(item); 
+                            currentDuration += duration;
+                        }
+                    }
+
+                    console.log(`Playlist built. ${playlist.length} items, total duration: ${currentDuration}s`);
+                    if (playlist.length > 0) {
+                        startPlayer(playlist);
+                    } else {
+                        alert(`Could not build a playable list for "${genreObj.name}". (No items with valid duration found).`);
+                    }
+
+                } catch (error) {
+                    console.error("Error playing genre:", error);
+                    alert("Failed to fetch playlist. Check console for details.");
+                } finally {
+                    showLoading(false);
+                }
+            }
+
+            async function getPlaylistItems(genreObj) {
+                const queryField = genreObj.type; 
+                const queryId = genreObj.id;     
+                
+                const searchQuery = `${queryField}:"${queryId}"`;
+                // *** MODIFIED *** Request title and description
+                const fields = "identifier,length,title,description";
+                const rows = 300; 
+
+                const url = `https://archive.org/advancedsearch.php?q=${encodeURIComponent(searchQuery)}&fl=${encodeURIComponent(fields)}&rows=${rows}&output=json`;
+                
+                console.log("Fetching URL:", url); // Debugging
+
+                const response = await fetch(url);
+                if (!response.ok) {
+                    throw new Error(`API request failed with status ${response.status}`);
+                }
+                const data = await response.json();
+                
+                if (!data.response || !data.response.docs) {
+                     console.error("Invalid API response structure:", data);
+                     return [];
+                }
+                
+                return data.response.docs; // Returns an array of items
+            }
+
+            function parseDuration(lengthStr) {
+                if (!lengthStr || typeof lengthStr !== 'string') return 0;
+                const parts = lengthStr.split(':').reverse();
+                let seconds = 0;
+                try {
+                    if (parts[0]) seconds += parseFloat(parts[0]);
+                    if (parts[1]) seconds += parseInt(parts[1], 10) * 60;
+                    if (parts[2]) seconds += parseInt(parts[2], 10) * 3600;
+                } catch (e) {
+                    console.warn(`Invalid duration format: ${lengthStr}`);
+                    return 0;
+                }
+                return isNaN(seconds) ? 0 : seconds;
+            }
+
+            // --- 3. PLAYER LOGIC ---
+
+            async function startPlayer(playlist) {
+                currentPlaylist = playlist;
+                currentTrack = 0;
+
+                // Switch views
+                playerView.style.display = 'block';
+                homeView.style.display = 'none';
+                
+                try {
+                    await playerView.requestFullscreen();
+                } catch (err) {
+                    console.error("Fullscreen failed:", err);
+                }
+
+                await playTrack(currentTrack);
+            }
+
+            async function playTrack(trackIndex) {
+                if (trackIndex >= currentPlaylist.length) {
+                    console.log("Playlist finished.");
+                    stopPlayer(); 
+                    return;
+                }
+
+                // Get the search item (has identifier, title, description)
+                const item = currentPlaylist[trackIndex];
+                const identifier = item.identifier;
+
+                console.log(`Playing track ${trackIndex + 1}/${currentPlaylist.length}: ${identifier}`);
+                showLoading(true); 
+
+                // Fetch full metadata for the item
+                const metadata = await getMetadata(identifier);
+                showLoading(false);
+
+                if (!metadata) {
+                    console.warn(`Failed to get metadata for ${identifier}. Skipping.`);
+                    playNext();
+                    return;
+                }
+
+                // Find the best video file URL from the full metadata
+                const videoUrl = findVideoUrlInMetadata(metadata);
+
+                // Populate the info box (using full metadata, fallback to search item)
+                updateInfoBox(metadata.metadata, item);
+                
+                if (videoUrl) {
+                    videoElement.src = videoUrl;
+                    videoElement.play().catch(e => {
+                        console.error("Playback failed, probably needs user interaction.", e);
+                        videoElement.muted = true;
+                        videoElement.play();
+                    });
+                } else {
+                    console.warn(`No video file found for ${identifier}. Skipping.`);
+                    playNext(); // Skip if no video file found
+                }
+            }
+
+            // *** NEW FUNCTION *** Fetches full metadata
+            async function getMetadata(identifier) {
+                try {
+                    const metaUrl = `https://archive.org/metadata/${identifier}`;
+                    const response = await fetch(metaUrl);
+                    if (!response.ok) throw new Error(`Status ${response.status}`);
+                    const data = await response.json();
+                    if (!data) {
+                        console.warn(`No metadata for ${identifier}`);
+                        return null;
+                    }
+                    return data;
+                } catch (error) {
+                    console.error(`Failed to get metadata for ${identifier}:`, error);
+                    return null;
+                }
+            }
+
+            // *** NEW FUNCTION *** Finds video URL in metadata
+            function findVideoUrlInMetadata(metadata) {
+                if (!metadata || !metadata.files) {
+                    console.warn(`No files found in metadata`);
+                    return null;
+                }
+                const identifier = metadata.metadata.identifier; 
+                
+                const videoFile = metadata.files.find(f => f.format === "512Kb MPEG4") ||
+                                  metadata.files.find(f => f.format === "MPEG4") ||
+                                  metadata.files.find(f => f.format && f.format.includes("h.264")) ||
+                                  metadata.files.find(f => f.name && f.name.endsWith(".mp4")) ||
+                                  metadata.files.find(f => f.format === "Ogg Video");
+                
+                if (videoFile && videoFile.name) {
+                    return `https://archive.org/download/${identifier}/${encodeURIComponent(videoFile.name)}`;
+                } else {
+                    console.warn(`No suitable video file format found for ${identifier}`);
+                    return null;
+                }
+            }
+
+            // *** NEW FUNCTION *** Populates the info box
+            function updateInfoBox(metadata, searchItem) {
+                // Use full metadata first, fallback to search item data
+                const title = metadata.title || searchItem.title || 'No Title';
+                
+                let description = metadata.description || searchItem.description || 'No Description';
+                // Description can be an array, join it nicely.
+                if (Array.isArray(description)) {
+                    description = description.join('<br>');
+                }
+
+                infoBox.innerHTML = `<h3>${title}</h3><p>${description}</p>`;
+            }
+
+            function playNext() {
+                currentTrack++;
+                playTrack(currentTrack);
+            }
+
+            function stopPlayer() {
+                videoElement.pause();
+                videoElement.src = ""; 
+                hideInfo(); // Hide info box on stop
+
+                if (document.fullscreenElement) {
+                    document.exitFullscreen();
+                }
+
+                playerView.style.display = 'none';
+                homeView.style.display = 'block';
+
+                currentPlaylist = [];
+                currentTrack = 0;
+                showLoading(false);
+            }
+
+            function showLoading(isLoading) {
+                loadingSpinner.style.display = isLoading ? 'block' : 'none';
+            }
+
+            // --- 4. NEW INFO BOX LOGIC ---
+
+            function showInfo() {
+                clearTimeout(infoTimer);
+                infoBox.style.display = 'block';
+                // Use a tiny timeout to allow the 'display' to apply before transitioning opacity
+                setTimeout(() => {
+                    infoBox.style.opacity = 1;
+                }, 10); 
+                
+                infoTimer = setTimeout(hideInfo, 5000); // Hide after 5 seconds
+            }
+
+            function hideInfo() {
+                clearTimeout(infoTimer);
+                infoBox.style.opacity = 0;
+                // Wait for transition to end before setting display to none
+                setTimeout(() => {
+                    infoBox.style.display = 'none';
+                }, 300); // This duration should match the CSS transition
+            }
+
+            function toggleInfo() {
+                // Check opacity because display is set late
+                if (infoBox.style.opacity === "1") {
+                    hideInfo();
+                } else {
+                    showInfo();
+                }
+            }
+
+
+            // --- 5. EVENT LISTENERS ---
+
+            startButton.addEventListener('click', () => playGenre(featureFilmsGenre));
+            videoElement.addEventListener('ended', playNext);
+            backButton.addEventListener('click', stopPlayer);
+
+            // --- NEW Info Button Listeners ---
+            infoButton.addEventListener('click', toggleInfo);
+            infoButton.addEventListener('mouseenter', showInfo);
+            infoButton.addEventListener('mouseleave', () => {
+                // Only auto-hide on mouseleave if the timer is running
+                if (infoTimer) {
+                    hideInfo();
+                }
+            });
+
+            document.addEventListener('fullscreenchange', () => {
+                if (!document.fullscreenElement && playerView.style.display === 'block') {
+                    stopPlayer();
+                }
+            });
+
+            videoElement.addEventListener('waiting', () => showLoading(true));
+            videoElement.addEventListener('playing', () => showLoading(false));
+
+        });
+    </script>
+</body>
+</html>
+
+
